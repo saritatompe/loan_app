@@ -26,17 +26,31 @@ type user struct {
 }
 
 type loanApplication struct {
-	UserId     string `json:"UserId"`
-	Name       string `json:"Name"`
-	SSN        string `json:"SSN"`
-	LoanAmount string `json:"LoanAmount"`
-	Education  string `json:"Education"`
-	Age        string `json:"Age"`
-	Tenure     string `json:"Tenure"`
-	Address    string `json:"Address"`
-	BankId     string `json:"BankId"`
-	Status     string `json:"Status"`
+	LoanId      string `json:"LoanId"`
+	Name        string `json:"Name"`
+	SSN         string `json:"SSN"`
+	LoanAmount  string `json:"LoanAmount"`
+	Education   string `json:"Education"`
+	Age         string `json:"Age"`
+	Tenure      string `json:"Tenure"`
+	Address     string `json:"Address"`
+	BankId      string `json:"BankId"`
+	Status      string `json:"Status"`
+	CreditScore string `json:"CreditScore"`
+	DealerId    string `json:"DealerId"`
 }
+
+type credit struct {
+	LoanId      string `json:"LoanId"`
+	SSN         string `json:"SSN"`
+	CreditScore string `json:"CreditScore"`
+}
+
+type creditScoreStruct struct {
+	CreditScore []credit
+}
+
+//var credit map[string]interface{}
 
 // Init is called during chaincode instantiation to initialize any
 // data. Note that chaincode upgrade also calls this function to reset
@@ -107,6 +121,9 @@ func (t *SimpleAsset) Invoke(stub shim.ChaincodeStubInterface) peer.Response {
 		result, err = getLoanOfUser(stub, args)
 	} else if fn == "queryLoanByBank" {
 		return t.queryLoanByBank(stub, args)
+	} else if fn == "setCreditScoreState" { // assume 'set' even if fn is nil
+
+		result, err = setCreditScoreState(stub, args)
 	} else {
 		result, err = updateLoanStatus(stub, args)
 	}
@@ -118,17 +135,59 @@ func (t *SimpleAsset) Invoke(stub shim.ChaincodeStubInterface) peer.Response {
 	return shim.Success([]byte(result))
 }
 
+// Set credit score of bank
+func setCreditScoreState(stub shim.ChaincodeStubInterface, args []string) (string, error) {
+	bytes1 := []byte(args[0])
+
+	var cs creditScoreStruct
+	err := json.Unmarshal(bytes1, &cs)
+	fmt.Errorf("Error while unmarshalling......................", err)
+
+	for k, v := range cs.CreditScore {
+		fmt.Println("Object retrieved......................", k, v.CreditScore, v.SSN)
+
+		SSN := v.SSN
+
+		queryString := fmt.Sprintf("{\"selector\": {\"SSN\": {\"$eq\": \"%s\" }}}", SSN)
+
+		queryResults, err := getQueryResultForQueryString(stub, queryString)
+		if err != nil {
+			return "", fmt.Errorf("Error occurred: %s", err)
+		}
+		var credit map[string]interface{}
+		//loanApplication := loanApplication{}
+		json.Unmarshal(queryResults, &credit)
+		fmt.Println("queryResults.......................", credit)
+
+		/*loanAsBytes, _ := stub.GetState(queryResults[0].Record.LoanId)
+		// loanApplication := loanApplication{}
+		json.Unmarshal(loanAsBytes, &loanApplication)
+		loanApplication.CreditScore = v.CreditScore
+		loanAsBytes, _ = json.Marshal(loanApplication)
+		stub.PutState(queryResults[0].Record.LoanId, loanAsBytes)*/
+	}
+
+	return args[0], nil
+}
+
 // Set stores the asset (both key and value) on the ledger. If the key exists,
 // it will override the value with the new one
 func createLoanRequest(stub shim.ChaincodeStubInterface, args []string) (string, error) {
 
-	if len(args) != 10 {
+	if len(args) != 12 {
 		return "", fmt.Errorf("Incorrect arguments. Expecting a key and a value")
 	}
-	/*if args[5] < 18 && args[5] > 60 {
-		return "", fmt.Errorf("Applicant not eligible for loan due to age restrictions")
-	}*/
-	loanApplication := &loanApplication{args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], "Requested"}
+
+	i1, err := strconv.Atoi(args[5])
+	if err == nil {
+		fmt.Println(i1)
+	}
+
+	if i1 < 18 || i1 > 60 {
+		return "", fmt.Errorf("Applicant not eligible for loan due to age restrictions.")
+	}
+
+	loanApplication := &loanApplication{args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11]}
 	LoanJSONasBytes, err := json.Marshal(loanApplication)
 	if err != nil {
 		return "", fmt.Errorf("Failed to Marshal asset: %s", args[0])
@@ -188,7 +247,6 @@ func (t *SimpleAsset) queryLoanByBank(stub shim.ChaincodeStubInterface, args []s
 
 	BankId := args[0]
 
-	//queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"loanApplication\",\"BankId\":\"%s\"}}", BankId)
 	queryString := fmt.Sprintf("{\"selector\": {\"BankId\": {\"$eq\": \"%s\" }}}", BankId)
 
 	queryResults, err := getQueryResultForQueryString(stub, queryString)
